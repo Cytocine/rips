@@ -1,0 +1,1905 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>Alpaca Screener & Multi-Timeframe Chart</title>
+
+  <!-- PWA: manifest + icons + platform meta -->
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#12141a" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Alpaca Screener" />
+  <meta name="mobile-web-app-capable" content="yes" />
+
+  <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+  <style>
+    :root {
+      --bg: #12141a;
+      --card-bg: #1a1d26;
+      --border: #282c37;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --green: #26a69a;
+      --red: #ef5350;
+      --cyan: #00e5ff;
+      --orange: #ff9100;
+      --accent: #2962ff;
+      --purple: #d500f9;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+    header {
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--border);
+      padding: 8px 16px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    input, button, select {
+      background: #0d1117;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    button {
+      background: var(--accent);
+      border: none;
+      font-weight: bold;
+      cursor: pointer;
+      color: #fff;
+    }
+    button:hover { opacity: 0.9; }
+    .btn-secondary { background: #21262d; border: 1px solid var(--border); }
+    /* On wide screens the credentials fields stay inline in the header
+       exactly as before; the <details> wrapper only becomes a visible
+       collapsible panel at the mobile breakpoint below. */
+    .creds-panel { display: contents; }
+    .creds-panel summary { display: none; }
+    .creds-panel .creds-fields { display: contents; }
+    .main-container {
+      display: flex;
+      flex: 1;
+      height: calc(100vh - 55px);
+    }
+    .screener-sidebar {
+      width: 460px;
+      min-width: 460px;
+      border-right: 1px solid var(--border);
+      background: var(--card-bg);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transition: width 0.2s ease, min-width 0.2s ease;
+    }
+    .screener-sidebar.collapsed {
+      width: 0;
+      min-width: 0;
+      border-right: none;
+    }
+    .sidebar-toggle-btn {
+      white-space: nowrap;
+    }
+    .ticker-nav-btn {
+      padding: 6px 10px;
+      font-size: 13px;
+    }
+    .screener-controls {
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+    }
+    .screener-table-wrap { flex: 1; overflow-y: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: right; }
+    th, td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+    th {
+      position: sticky;
+      top: 0;
+      background: #1e222d;
+      color: var(--text-muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      cursor: pointer;
+      user-select: none;
+    }
+    th:hover { color: #fff; }
+    th.sorted-asc::after { content: " ▲"; color: var(--accent); }
+    th.sorted-desc::after { content: " ▼"; color: var(--accent); }
+    td:first-child, th:first-child { text-align: left; }
+    tr.ticker-row { cursor: pointer; transition: background 0.15s; }
+    tr.ticker-row:hover { background: #232733; }
+    tr.selected { background: #2a3142 !important; outline: 1px solid var(--accent); }
+    .badge {
+      display: inline-block;
+      padding: 2px 5px;
+      border-radius: 3px;
+      font-size: 10px;
+      font-weight: 700;
+    }
+    .badge-buy { background: rgba(38, 166, 154, 0.2); color: var(--green); border: 1px solid var(--green); }
+    .badge-sell { background: rgba(239, 83, 80, 0.2); color: var(--red); border: 1px solid var(--red); }
+    .badge-div { background: rgba(213, 0, 249, 0.2); color: var(--purple); border: 1px solid var(--purple); }
+    .badge-pullback { background: rgba(255, 145, 0, 0.2); color: var(--orange); border: 1px solid var(--orange); }
+    .trade-plan-bar {
+      padding: 6px 16px;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .charts-wrapper { flex: 1; display: flex; flex-direction: column; position: relative; }
+    .chart-toolbar {
+      padding: 8px 16px;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+    .chart-panes-container {
+      flex: 1;
+      display: flex;
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+    .timeframe-pane {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      height: 100%;
+      border-right: 1px solid var(--border);
+    }
+    .timeframe-pane:last-child { border-right: none; }
+    .pane-header {
+      background: #161922;
+      border-bottom: 1px solid var(--border);
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: bold;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+    .price-view { flex: 7; width: 100%; position: relative; }
+    .rsi-view { flex: 3; width: 100%; border-top: 1px solid var(--border); position: relative; }
+    .legend {
+      position: absolute;
+      top: 28px;
+      left: 10px;
+      z-index: 5;
+      font-size: 10px;
+      color: var(--text-muted);
+      pointer-events: none;
+      background: rgba(18, 20, 26, 0.75);
+      padding: 3px 6px;
+      border-radius: 4px;
+    }
+    .drawing-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 10;
+    }
+    .drawing-canvas.active {
+      pointer-events: auto;
+      cursor: crosshair;
+    }
+    #originWarning {
+      display: none;
+      background: #b71c1c;
+      color: #fff;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: bold;
+      text-align: center;
+    }
+
+    @media (max-width: 860px) {
+      html, body { height: auto; min-height: 100dvh; overflow: visible; overscroll-behavior-y: contain; }
+
+      header {
+        padding: 8px 10px;
+        gap: 6px;
+      }
+      header input {
+        flex: 1 1 100%;
+        width: 100%;
+      }
+      header button {
+        flex: 1 1 100%;
+        width: 100%;
+      }
+      /* API key fields are rarely re-entered once saved (they persist in
+         localStorage) so they're tucked behind a collapsible details
+         panel on phones to keep the header short and the chart close to
+         the top of the page. */
+      header .creds-panel {
+        display: block;
+        flex: 1 1 100%;
+        width: 100%;
+        order: 3;
+      }
+      header .creds-panel summary {
+        display: list-item;
+        list-style: none;
+        cursor: pointer;
+        color: var(--text-muted);
+        font-size: 12px;
+        padding: 4px 2px;
+      }
+      header .creds-panel summary::-webkit-details-marker { display: none; }
+      header .creds-panel .creds-fields {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-top: 6px;
+      }
+      header #watchlist { order: 1; }
+      header #scanBtn { order: 2; }
+
+      input, button, select {
+        padding: 11px 12px;
+        font-size: 14px;
+        min-height: 40px;
+      }
+
+      .main-container {
+        flex-direction: column;
+        height: auto;
+        overflow: visible;
+      }
+      .screener-sidebar {
+        width: 100%;
+        min-width: 0;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+        max-height: 42vh;
+        transition: max-height 0.2s ease;
+      }
+      .screener-sidebar.collapsed {
+        max-height: 0;
+        border-bottom: none;
+      }
+      .screener-controls select { width: 100%; }
+      .screener-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      table { min-width: 620px; font-size: 12px; }
+      th, td { padding: 12px 8px; }
+
+      .kbd-hint { display: none; }
+      .chart-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 6px;
+        padding: 6px 10px;
+      }
+      .chart-toolbar > div {
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 6px;
+      }
+      .chart-toolbar select { flex: 1 1 auto; }
+      #chartSymbol { font-size: 16px !important; }
+      .ticker-nav-btn { min-width: 44px; }
+
+      .trade-plan-bar {
+        font-size: 11px;
+        gap: 8px;
+        padding: 6px 10px;
+      }
+
+      /* Chart real estate is the point of the app on a phone, so panes
+         size off the dynamic viewport height (accounts for the mobile
+         browser chrome collapsing/expanding) rather than a fixed px
+         value, and only one timeframe is shown at a time (see
+         applyLayoutMode("1d") on load) so it isn't split in half. */
+      .chart-panes-container { flex-direction: column; height: auto; }
+      .timeframe-pane {
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+        min-height: 62dvh;
+        flex: none;
+      }
+      .timeframe-pane:last-child { border-bottom: none; }
+      .price-view { min-height: 44dvh; touch-action: none; }
+      .rsi-view { min-height: 16dvh; touch-action: none; }
+      .legend { font-size: 9px; top: 24px; }
+
+      /* Larger, thumb-friendly zoom controls since pinch-to-zoom on the
+         canvas can be fiddly on small screens. */
+      #zoomInBtn, #zoomOutBtn, #zoomResetBtn { min-width: 40px; }
+    }
+
+    @media (max-width: 860px) and (orientation: landscape) {
+      /* In landscape a phone has plenty of width but little height, so
+         let the pane use most of the screen instead of the portrait
+         percentages above. */
+      .timeframe-pane { min-height: 88dvh; }
+      .price-view { min-height: 64dvh; }
+      .rsi-view { min-height: 20dvh; }
+      .screener-sidebar { max-height: 55dvh; }
+    }
+  </style>
+</head>
+<body>
+
+  <div id="originWarning">
+    Warning: Opened via 'file://'. Modern browsers block cross-origin Alpaca API requests on file protocols, and the PWA install prompt / offline caching also require http(s). Run through a local HTTP server.
+  </div>
+
+  <header>
+    <details class="creds-panel">
+      <summary>⚙ API Keys</summary>
+      <div class="creds-fields">
+        <input type="text" id="apiKey" placeholder="Alpaca Key ID" size="22" />
+        <input type="password" id="apiSecret" placeholder="Alpaca Secret Key" size="24" />
+      </div>
+    </details>
+    <input type="text" id="watchlist" value="AAPL,MSFT,NVDA,TSLA,AMD,GOOGL,AMZN,META,SPY,QQQ" size="32" />
+    <button id="scanBtn" type="button">Scan Watchlist</button>
+  </header>
+
+  <div class="main-container">
+    <div class="screener-sidebar">
+      <div class="screener-controls">
+        <label>View Mode:</label>
+        <select id="colMode">
+          <option value="price">Show Price</option>
+          <option value="dist">Distance from EMA34 (%)</option>
+          <option value="near_ema">Filter: Close to EMA34 (&le; 2%)</option>
+        </select>
+      </div>
+      <div class="screener-table-wrap" id="tableWrap">
+        <table>
+          <thead>
+            <tr id="tableHeader">
+              <th data-key="sym">Ticker</th>
+              <th data-key="displayVal" id="dynHeader">Price</th>
+              <th data-key="rsi">RSI</th>
+              <th data-key="stBullish">Trend</th>
+              <th data-key="score">Score</th>
+              <th data-key="patterns">Signals</th>
+            </tr>
+          </thead>
+          <tbody id="screenerBody">
+            <tr><td colspan="6" style="text-align:center; color: var(--text-muted);">Enter API keys and scan watchlist</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="charts-wrapper">
+      <div class="chart-toolbar">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <button class="btn-secondary sidebar-toggle-btn" id="sidebarToggleBtn" type="button" title="Show/hide watchlist">☰</button>
+          <button class="btn-secondary ticker-nav-btn" id="prevTickerBtn" type="button" title="Previous ticker">◀</button>
+          <span id="chartSymbol" style="font-weight:bold; font-size:15px;">Select a ticker</span>
+          <button class="btn-secondary ticker-nav-btn" id="nextTickerBtn" type="button" title="Next ticker">▶</button>
+          <span style="color: var(--text-muted); font-size: 11px;" class="kbd-hint">[↑/↓ Arrow Keys to navigate]</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <label style="font-size: 12px; color: var(--text-muted);">Drawing:</label>
+          <select id="drawToolSelect">
+            <option value="none">Pointer (Off)</option>
+            <option value="line">Trendline</option>
+            <option value="hline">Horizontal Line</option>
+            <option value="rect">Rectangle</option>
+          </select>
+          <button class="btn-secondary" id="clearDrawBtn">Clear</button>
+          <label style="font-size: 12px; color: var(--text-muted); margin-left: 6px;">Layout:</label>
+          <select id="splitLayoutSelect">
+            <option value="split">Split (1D + 1H)</option>
+            <option value="1d">1D Only</option>
+            <option value="1h">1H Only</option>
+          </select>
+          <button class="btn-secondary" id="exportImgBtn">Export View</button>
+          <span style="display:flex; align-items:center; gap:4px; margin-left: 6px;">
+            <button class="btn-secondary" id="zoomOutBtn" title="Zoom out">−</button>
+            <button class="btn-secondary" id="zoomInBtn" title="Zoom in">+</button>
+            <button class="btn-secondary" id="zoomResetBtn" title="Reset zoom">Reset</button>
+          </span>
+        </div>
+      </div>
+
+      <div class="trade-plan-bar" id="tradePlanBar">
+        <span style="color:var(--text-muted);">Select a ticker to see its 2-5 day trade plan.</span>
+      </div>
+
+      <div class="chart-panes-container" id="chartPanes">
+        <div class="timeframe-pane" id="paneDaily">
+          <div class="pane-header">
+            <span>DAILY TIMEFRAME (1D) — LAST 30 DAYS</span>
+            <span id="statusDaily" style="color:var(--cyan)">-</span>
+          </div>
+          <div class="legend">
+            <span style="color:#00e5ff;">■</span> Trig H &nbsp;
+            <span style="color:#ff9100;">■</span> Trig L &nbsp;
+            <span style="color:#26a69a;">■</span> ST Bull &nbsp;
+            <span style="color:#ef5350;">■</span> ST Bear &nbsp;
+            <span style="color:#2962ff;">—</span> EMA34
+          </div>
+          <div class="price-view" id="dailyPriceChart">
+            <canvas class="drawing-canvas" id="canvasDaily"></canvas>
+          </div>
+          <div class="rsi-view" id="dailyRsiChart"></div>
+        </div>
+
+        <div class="timeframe-pane" id="paneHourly">
+          <div class="pane-header">
+            <span>HOURLY TIMEFRAME (1H) — LAST 30 DAYS</span>
+            <span id="statusHourly" style="color:var(--cyan)">-</span>
+          </div>
+          <div class="legend">
+            <span style="color:#00e5ff;">■</span> Trig H &nbsp;
+            <span style="color:#ff9100;">■</span> Trig L &nbsp;
+            <span style="color:#26a69a;">■</span> ST Bull &nbsp;
+            <span style="color:#ef5350;">■</span> ST Bear &nbsp;
+            <span style="color:#2962ff;">—</span> EMA34
+          </div>
+          <div class="price-view" id="hourlyPriceChart">
+            <canvas class="drawing-canvas" id="canvasHourly"></canvas>
+          </div>
+          <div class="rsi-view" id="hourlyRsiChart"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    var charts = {
+      daily: { priceChart: null, rsiChart: null, candleSeries: null, stSeries: null, trigSeries: null, emaSeries: null, rsiSeries: null, rsiEmaSeries: null, obSeries: null, osSeries: null, bullDivPriceSeries: null, bearDivPriceSeries: null, bullDivRsiSeries: null, bearDivRsiSeries: null, stopPriceLine: null, targetPriceLine: null },
+      hourly: { priceChart: null, rsiChart: null, candleSeries: null, stSeries: null, trigSeries: null, emaSeries: null, rsiSeries: null, rsiEmaSeries: null, obSeries: null, osSeries: null, bullDivPriceSeries: null, bearDivPriceSeries: null, bullDivRsiSeries: null, bearDivRsiSeries: null }
+    };
+
+    var cacheDaily = {};
+    var cacheHourly = {};
+    var screenerData = [];
+    var currentSortKey = "sym";
+    var currentSortAsc = true;
+    var activeTicker = null;
+    var renderedTickers = [];
+
+    var currentTool = "none";
+    var drawings = { daily: [], hourly: [] };
+    var activeDrawing = { isDrawing: false, pane: null, startPt: { x: 0, y: 0 } };
+
+    function checkFileOrigin() {
+      if (window.location.protocol === "file:") {
+        document.getElementById("originWarning").style.display = "block";
+      }
+    }
+
+    function loadSavedCredentials() {
+      var k = localStorage.getItem("alpaca_api_key");
+      var s = localStorage.getItem("alpaca_api_secret");
+      if (k) document.getElementById("apiKey").value = k;
+      if (s) document.getElementById("apiSecret").value = s;
+
+      document.getElementById("apiKey").addEventListener("input", function(e) {
+        localStorage.setItem("alpaca_api_key", e.target.value.trim());
+      });
+      document.getElementById("apiSecret").addEventListener("input", function(e) {
+        localStorage.setItem("alpaca_api_secret", e.target.value.trim());
+      });
+    }
+
+    function createCandleSeriesCompat(chart, options) {
+      if (typeof chart.addCandlestickSeries === "function") return chart.addCandlestickSeries(options);
+      if (typeof chart.addSeries === "function" && LightweightCharts.CandlestickSeries) {
+        return chart.addSeries(LightweightCharts.CandlestickSeries, options);
+      }
+      throw new Error("Cannot create Candlestick series");
+    }
+
+    function createLineSeriesCompat(chart, options) {
+      if (typeof chart.addLineSeries === "function") return chart.addLineSeries(options);
+      if (typeof chart.addSeries === "function" && LightweightCharts.LineSeries) {
+        return chart.addSeries(LightweightCharts.LineSeries, options);
+      }
+      throw new Error("Cannot create Line series");
+    }
+
+    function setMarkersCompat(series, markers) {
+      if (typeof series.setMarkers === "function") {
+        series.setMarkers(markers);
+      } else if (typeof LightweightCharts.createSeriesMarkers === "function") {
+        LightweightCharts.createSeriesMarkers(series, markers);
+      }
+    }
+
+    function createAreaSeriesCompat(chart, options) {
+      if (typeof chart.addAreaSeries === "function") return chart.addAreaSeries(options);
+      if (typeof chart.addSeries === "function" && LightweightCharts.AreaSeries) {
+        return chart.addSeries(LightweightCharts.AreaSeries, options);
+      }
+      throw new Error("Cannot create Area series");
+    }
+
+    function initChartPane(timeframe, pId, rId) {
+      var pContainer = document.getElementById(pId);
+      var rContainer = document.getElementById(rId);
+
+      var commonOpts = {
+        layout: { background: { color: "#12141a" }, textColor: "#9ca3af" },
+        grid: { vertLines: { visible: false }, horzLines: { visible: false } },
+        rightPriceScale: { borderColor: "#282c37" },
+        timeScale: {
+          borderColor: "#282c37",
+          timeVisible: timeframe === "hourly",
+          rightOffset: 15,
+          barSpacing: timeframe === "daily" ? 18 : 8
+        },
+        crosshair: { mode: LightweightCharts.CrosshairMode ? LightweightCharts.CrosshairMode.Normal : 1 },
+        // Explicit touch config so one-finger drag pans and two-finger
+        // pinch zooms on phones (the container also has touch-action:
+        // none in the mobile CSS so the browser doesn't intercept the
+        // gesture for page scroll/zoom first).
+        handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
+        handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true }
+      };
+
+      var pChart = LightweightCharts.createChart(pContainer, commonOpts);
+      var cSeries = createCandleSeriesCompat(pChart, { borderVisible: true });
+      var stSeries = createLineSeriesCompat(pChart, { lineWidth: 2, lastValueVisible: false, priceLineVisible: false });
+      var trigSeries = createLineSeriesCompat(pChart, {
+        lineWidth: 2,
+        lineStyle: LightweightCharts.LineStyle ? LightweightCharts.LineStyle.Dashed : 2,
+        lastValueVisible: false,
+        priceLineVisible: false
+      });
+      var emaSeries = createLineSeriesCompat(pChart, { color: "#2962ff", lineWidth: 1, lastValueVisible: false, priceLineVisible: false });
+
+      var rChart = LightweightCharts.createChart(rContainer, Object.assign({}, commonOpts, {
+        timeScale: {
+          borderColor: "#282c37",
+          visible: true,
+          timeVisible: timeframe === "hourly",
+          rightOffset: 15,
+          barSpacing: timeframe === "daily" ? 18 : 8
+        }
+      }));
+      // Overbought (>=70, sell zone) and oversold (<=30, buy zone) shaded bands.
+      // Drawn first so the RSI line and divergence lines render on top of them.
+      var obSeries = createAreaSeriesCompat(rChart, {
+        topColor: "rgba(239, 83, 80, 0.18)",
+        bottomColor: "rgba(239, 83, 80, 0.18)",
+        lineWidth: 0,
+        lineVisible: false,
+        crosshairMarkerVisible: false,
+        lastValueVisible: false,
+        priceLineVisible: false,
+        baseValue: { type: "price", price: 70 }
+      });
+      var osSeries = createAreaSeriesCompat(rChart, {
+        topColor: "rgba(38, 166, 154, 0.18)",
+        bottomColor: "rgba(38, 166, 154, 0.18)",
+        lineWidth: 0,
+        lineVisible: false,
+        crosshairMarkerVisible: false,
+        lastValueVisible: false,
+        priceLineVisible: false,
+        baseValue: { type: "price", price: 30 }
+      });
+
+      var rSeries = createLineSeriesCompat(rChart, { color: "#9c27b0", lineWidth: 2, lastValueVisible: false, priceLineVisible: false });
+      var rEmaSeries = createLineSeriesCompat(rChart, { color: "#e91e63", lineWidth: 1, lastValueVisible: false, priceLineVisible: false });
+
+      // Divergence connector lines: plotted on both the price pane and RSI pane
+      // between the two swing points that form the divergence.
+      var bullDivPriceSeries = createLineSeriesCompat(pChart, {
+        color: "#d500f9", lineWidth: 2,
+        lineStyle: LightweightCharts.LineStyle ? LightweightCharts.LineStyle.Dashed : 2,
+        lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false
+      });
+      var bearDivPriceSeries = createLineSeriesCompat(pChart, {
+        color: "#e91e63", lineWidth: 2,
+        lineStyle: LightweightCharts.LineStyle ? LightweightCharts.LineStyle.Dashed : 2,
+        lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false
+      });
+      var bullDivRsiSeries = createLineSeriesCompat(rChart, {
+        color: "#d500f9", lineWidth: 2,
+        lineStyle: LightweightCharts.LineStyle ? LightweightCharts.LineStyle.Dashed : 2,
+        lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false
+      });
+      var bearDivRsiSeries = createLineSeriesCompat(rChart, {
+        color: "#e91e63", lineWidth: 2,
+        lineStyle: LightweightCharts.LineStyle ? LightweightCharts.LineStyle.Dashed : 2,
+        lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false
+      });
+
+      var dashed = LightweightCharts.LineStyle ? LightweightCharts.LineStyle.Dashed : 2;
+      var dotted = LightweightCharts.LineStyle ? LightweightCharts.LineStyle.Dotted : 1;
+      rSeries.createPriceLine({ price: 70, color: '#ef5350', lineWidth: 1, lineStyle: dashed, axisLabelVisible: false });
+      rSeries.createPriceLine({ price: 50, color: '#8b949e', lineWidth: 1, lineStyle: dotted, axisLabelVisible: false });
+      rSeries.createPriceLine({ price: 30, color: '#26a69a', lineWidth: 1, lineStyle: dashed, axisLabelVisible: false });
+
+      pChart.timeScale().subscribeVisibleLogicalRangeChange(function(r) { rChart.timeScale().setVisibleLogicalRange(r); });
+      rChart.timeScale().subscribeVisibleLogicalRangeChange(function(r) { pChart.timeScale().setVisibleLogicalRange(r); });
+
+      charts[timeframe] = {
+        priceChart: pChart,
+        rsiChart: rChart,
+        candleSeries: cSeries,
+        stSeries: stSeries,
+        trigSeries: trigSeries,
+        emaSeries: emaSeries,
+        rsiSeries: rSeries,
+        rsiEmaSeries: rEmaSeries,
+        obSeries: obSeries,
+        osSeries: osSeries,
+        bullDivPriceSeries: bullDivPriceSeries,
+        bearDivPriceSeries: bearDivPriceSeries,
+        bullDivRsiSeries: bullDivRsiSeries,
+        bearDivRsiSeries: bearDivRsiSeries
+      };
+    }
+
+    function initCharts() {
+      initChartPane("daily", "dailyPriceChart", "dailyRsiChart");
+      initChartPane("hourly", "hourlyPriceChart", "hourlyRsiChart");
+      initCrosshairSync();
+      setupAllDrawingCanvases();
+      initDrawingHandlers();
+      window.addEventListener("resize", function() {
+        resizeAllCharts();
+        setupAllDrawingCanvases();
+      });
+    }
+
+    // Keeps the crosshair moving together across all four panes: daily
+    // price/RSI and hourly price/RSI. Daily bars are keyed by a date string
+    // ("2024-01-15"), hourly bars by a unix-second timestamp, so moving
+    // between timeframes maps through the currently selected ticker's
+    // cached bars to find the corresponding point on the other side.
+    function initCrosshairSync() {
+      var d = charts.daily, h = charts.hourly;
+      var syncing = false;
+
+      function dailyDateToHourlyTime(dayStr) {
+        var hb = activeTicker && cacheHourly[activeTicker] && cacheHourly[activeTicker].bars;
+        if (!hb) return null;
+        var match = null;
+        for (var i = 0; i < hb.length; i++) {
+          if (hb[i].t.split("T")[0] === dayStr) match = hb[i];
+        }
+        return match ? Math.floor(new Date(match.t).getTime() / 1000) : null;
+      }
+
+      function hourlyTimeToDailyDate(epochSec) {
+        return new Date(epochSec * 1000).toISOString().split("T")[0];
+      }
+
+      function moveAll(sourceTf, param) {
+        if (syncing) return;
+        syncing = true;
+
+        if (!param || !param.time) {
+          d.priceChart.clearCrosshairPosition();
+          d.rsiChart.clearCrosshairPosition();
+          h.priceChart.clearCrosshairPosition();
+          h.rsiChart.clearCrosshairPosition();
+          syncing = false;
+          return;
+        }
+
+        if (sourceTf === "daily") {
+          d.priceChart.setCrosshairPosition(0, param.time, d.candleSeries);
+          d.rsiChart.setCrosshairPosition(0, param.time, d.rsiSeries);
+          var hTime = dailyDateToHourlyTime(param.time);
+          if (hTime !== null) {
+            h.priceChart.setCrosshairPosition(0, hTime, h.candleSeries);
+            h.rsiChart.setCrosshairPosition(0, hTime, h.rsiSeries);
+          }
+        } else {
+          h.priceChart.setCrosshairPosition(0, param.time, h.candleSeries);
+          h.rsiChart.setCrosshairPosition(0, param.time, h.rsiSeries);
+          var dTime = hourlyTimeToDailyDate(param.time);
+          d.priceChart.setCrosshairPosition(0, dTime, d.candleSeries);
+          d.rsiChart.setCrosshairPosition(0, dTime, d.rsiSeries);
+        }
+        syncing = false;
+      }
+
+      d.priceChart.subscribeCrosshairMove(function(p) { moveAll("daily", p); });
+      d.rsiChart.subscribeCrosshairMove(function(p) { moveAll("daily", p); });
+      h.priceChart.subscribeCrosshairMove(function(p) { moveAll("hourly", p); });
+      h.rsiChart.subscribeCrosshairMove(function(p) { moveAll("hourly", p); });
+    }
+
+    function resizeAllCharts() {
+      ["daily", "hourly"].forEach(function(tf) {
+        var pContainer = document.getElementById(tf + "PriceChart");
+        var rContainer = document.getElementById(tf + "RsiChart");
+        if (charts[tf].priceChart && pContainer.clientWidth > 0) {
+          charts[tf].priceChart.applyOptions({ width: pContainer.clientWidth, height: pContainer.clientHeight });
+          charts[tf].rsiChart.applyOptions({ width: rContainer.clientWidth, height: rContainer.clientHeight });
+        }
+      });
+    }
+
+    function setupAllDrawingCanvases() {
+      ["daily", "hourly"].forEach(function(tf) {
+        var id = tf === "daily" ? "canvasDaily" : "canvasHourly";
+        var c = document.getElementById(id);
+        var pContainer = document.getElementById(tf + "PriceChart");
+        c.width = pContainer.clientWidth;
+        c.height = pContainer.clientHeight;
+        redrawCanvas(tf);
+      });
+    }
+
+    function redrawCanvas(tf) {
+      var id = tf === "daily" ? "canvasDaily" : "canvasHourly";
+      var canvas = document.getElementById(id);
+      var ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      (drawings[tf] || []).forEach(function(item) {
+        ctx.strokeStyle = "#00e5ff";
+        ctx.fillStyle = "rgba(0, 229, 255, 0.15)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+
+        if (item.type === "line") {
+          ctx.moveTo(item.x1, item.y1);
+          ctx.lineTo(item.x2, item.y2);
+          ctx.stroke();
+        } else if (item.type === "hline") {
+          ctx.moveTo(0, item.y1);
+          ctx.lineTo(canvas.width, item.y1);
+          ctx.stroke();
+        } else if (item.type === "rect") {
+          ctx.rect(item.x1, item.y1, item.x2 - item.x1, item.y2 - item.y1);
+          ctx.fill();
+          ctx.stroke();
+        }
+      });
+    }
+
+    function initDrawingHandlers() {
+      var toolSelect = document.getElementById("drawToolSelect");
+      var clearBtn = document.getElementById("clearDrawBtn");
+
+      toolSelect.addEventListener("change", function(e) {
+        currentTool = e.target.value;
+        ["canvasDaily", "canvasHourly"].forEach(function(id) {
+          var c = document.getElementById(id);
+          if (currentTool === "none") c.classList.remove("active");
+          else c.classList.add("active");
+        });
+      });
+
+      clearBtn.addEventListener("click", function() {
+        drawings.daily = [];
+        drawings.hourly = [];
+        redrawCanvas("daily");
+        redrawCanvas("hourly");
+      });
+
+      ["daily", "hourly"].forEach(function(tf) {
+        var id = tf === "daily" ? "canvasDaily" : "canvasHourly";
+        var canvas = document.getElementById(id);
+
+        canvas.addEventListener("mousedown", function(e) {
+          if (currentTool === "none") return;
+          activeDrawing.isDrawing = true;
+          activeDrawing.pane = tf;
+          var rect = canvas.getBoundingClientRect();
+          activeDrawing.startPt = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        });
+
+        canvas.addEventListener("mousemove", function(e) {
+          if (!activeDrawing.isDrawing || activeDrawing.pane !== tf || currentTool === "none") return;
+          var rect = canvas.getBoundingClientRect();
+          var curX = e.clientX - rect.left;
+          var curY = e.clientY - rect.top;
+
+          redrawCanvas(tf);
+          var ctx = canvas.getContext("2d");
+          ctx.strokeStyle = "#ffea00";
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([4, 4]);
+          ctx.beginPath();
+
+          if (currentTool === "line") {
+            ctx.moveTo(activeDrawing.startPt.x, activeDrawing.startPt.y);
+            ctx.lineTo(curX, curY);
+            ctx.stroke();
+          } else if (currentTool === "hline") {
+            ctx.moveTo(0, activeDrawing.startPt.y);
+            ctx.lineTo(canvas.width, activeDrawing.startPt.y);
+            ctx.stroke();
+          } else if (currentTool === "rect") {
+            ctx.rect(activeDrawing.startPt.x, activeDrawing.startPt.y, curX - activeDrawing.startPt.x, curY - activeDrawing.startPt.y);
+            ctx.stroke();
+          }
+          ctx.setLineDash([]);
+        });
+
+        canvas.addEventListener("mouseup", function(e) {
+          if (!activeDrawing.isDrawing || activeDrawing.pane !== tf || currentTool === "none") return;
+          activeDrawing.isDrawing = false;
+          var rect = canvas.getBoundingClientRect();
+          var endX = e.clientX - rect.left;
+          var endY = e.clientY - rect.top;
+
+          drawings[tf].push({
+            type: currentTool,
+            x1: activeDrawing.startPt.x,
+            y1: activeDrawing.startPt.y,
+            x2: endX,
+            y2: endY
+          });
+          redrawCanvas(tf);
+        });
+      });
+    }
+
+    function calculateRSI(bars, period) {
+      period = period || 14;
+      var rsi = new Array(bars.length).fill(null);
+      if (bars.length <= period) return rsi;
+
+      var gains = 0, losses = 0;
+      for (var i = 1; i <= period; i++) {
+        var diff = bars[i].c - bars[i - 1].c;
+        if (diff >= 0) gains += diff; else losses -= diff;
+      }
+      var avgGain = gains / period;
+      var avgLoss = losses / period;
+      rsi[period] = 100 - (100 / (1 + (avgGain / (avgLoss || 1e-9))));
+
+      for (var j = period + 1; j < bars.length; j++) {
+        var delta = bars[j].c - bars[j - 1].c;
+        avgGain = (avgGain * (period - 1) + (delta > 0 ? delta : 0)) / period;
+        avgLoss = (avgLoss * (period - 1) + (delta < 0 ? -delta : 0)) / period;
+        rsi[j] = 100 - (100 / (1 + (avgGain / (avgLoss || 1e-9))));
+      }
+      return rsi;
+    }
+
+    function calculateEMAProgressive(values, period) {
+      var len = values.length;
+      var ema = new Array(len).fill(null);
+      if (len === 0) return ema;
+      ema[0] = values[0];
+      for (var i = 1; i < len; i++) {
+        var effP = Math.min(i + 1, period);
+        var k = 2 / (effP + 1);
+        ema[i] = (values[i] * k) + (ema[i - 1] * (1 - k));
+      }
+      return ema;
+    }
+
+    function calculateWMAProgressive(values, period) {
+      var len = values.length;
+      var wma = new Array(len).fill(null);
+      for (var i = 0; i < len; i++) {
+        var effP = Math.min(i + 1, period);
+        var denom = (effP * (effP + 1)) / 2;
+        var sum = 0;
+        for (var j = 0; j < effP; j++) sum += values[i - j] * (effP - j);
+        wma[i] = sum / denom;
+      }
+      return wma;
+    }
+
+    function calculateHMAProgressive(values, period) {
+      var half = Math.max(1, Math.round(period / 2));
+      var sqrt = Math.max(1, Math.round(Math.sqrt(period)));
+      var wmaHalf = calculateWMAProgressive(values, half);
+      var wmaFull = calculateWMAProgressive(values, period);
+      var diff = new Array(values.length).fill(0);
+      for (var i = 0; i < values.length; i++) diff[i] = (2 * wmaHalf[i]) - wmaFull[i];
+      return calculateWMAProgressive(diff, sqrt);
+    }
+
+    function calculateSuperTrend(bars, period, mult) {
+      period = period || 10;
+      mult = mult || 3.0;
+      var len = bars.length;
+      var st = new Array(len).fill(null);
+      var dir = new Array(len).fill(1);
+      if (len < 2) return { st: st, direction: dir };
+
+      var tr = [0];
+      for (var i = 1; i < len; i++) {
+        tr.push(Math.max(bars[i].h - bars[i].l, Math.abs(bars[i].h - bars[i - 1].c), Math.abs(bars[i].l - bars[i - 1].c)));
+      }
+      var atr = tr[1];
+      var upper = bars[0].h, lower = bars[0].l;
+
+      for (var m = 1; m < len; m++) {
+        var effP = Math.min(m, period);
+        atr = (atr * (effP - 1) + tr[m]) / effP;
+        var hl2 = (bars[m].h + bars[m].l) / 2;
+        var bUpper = hl2 + (mult * atr);
+        var bLower = hl2 - (mult * atr);
+
+        upper = (bUpper < upper || bars[m - 1].c > upper) ? bUpper : upper;
+        lower = (bLower > lower || bars[m - 1].c < lower) ? bLower : lower;
+
+        var currDir = dir[m - 1];
+        if (currDir === -1 && bars[m].c > upper) currDir = 1;
+        else if (currDir === 1 && bars[m].c < lower) currDir = -1;
+
+        dir[m] = currDir;
+        st[m] = currDir === 1 ? lower : upper;
+      }
+      return { st: st, direction: dir };
+    }
+
+    function calculateATRProgressive(bars, period) {
+      period = period || 14;
+      var len = bars.length;
+      var atr = new Array(len).fill(null);
+      if (len < 2) return atr;
+
+      var tr = [0];
+      for (var i = 1; i < len; i++) {
+        tr.push(Math.max(bars[i].h - bars[i].l, Math.abs(bars[i].h - bars[i - 1].c), Math.abs(bars[i].l - bars[i - 1].c)));
+      }
+      var running = tr[1];
+      atr[1] = running;
+      for (var m = 2; m < len; m++) {
+        var effP = Math.min(m, period);
+        running = (running * (effP - 1) + tr[m]) / effP;
+        atr[m] = running;
+      }
+      return atr;
+    }
+
+    function calculatePctReturn(bars, lookback) {
+      var len = bars.length;
+      if (len <= lookback) return 0;
+      var startClose = bars[len - 1 - lookback].c;
+      var endClose = bars[len - 1].c;
+      if (!startClose) return 0;
+      return ((endClose - startClose) / startClose) * 100;
+    }
+
+    // Looks for a shallow pullback into an established EMA34 uptrend followed
+    // by a bounce candle — meant to catch the entry earlier than waiting for a
+    // fresh breakout, and to size trades for a short 2-5 day hold.
+    function detectPullbackToEMA(bars, priceEma, direction, lookback) {
+      lookback = lookback || 6;
+      var len = bars.length;
+      var lastIdx = len - 1;
+      if (lastIdx < lookback + 5) return { isPullback: false };
+
+      // Trend must already be established (bullish for most of the recent bars),
+      // not a brand-new flip — fresh flips are handled by the existing turn scan.
+      var bullCount = 0;
+      for (var k = lastIdx - 5; k <= lastIdx; k++) {
+        if (direction[k] === 1) bullCount++;
+      }
+      if (direction[lastIdx] !== 1 || bullCount < 5) return { isPullback: false };
+
+      var touchIdx = -1;
+      for (var i = lastIdx - lookback; i < lastIdx; i++) {
+        if (priceEma[i] === null) continue;
+        if (direction[i] !== 1) return { isPullback: false }; // trend broke during the window
+        if (bars[i].l <= priceEma[i] * 1.015) touchIdx = i;
+      }
+      if (touchIdx === -1) return { isPullback: false };
+
+      var lastBar = bars[lastIdx];
+      var prevBar = bars[lastIdx - 1];
+      var isBounceCandle = lastBar.c > prevBar.c && lastBar.c > lastBar.o;
+      var stillNearTrend = priceEma[lastIdx] !== null && lastBar.c >= priceEma[lastIdx] * 0.985;
+
+      if (isBounceCandle && stillNearTrend) {
+        return { isPullback: true, touchIdx: touchIdx };
+      }
+      return { isPullback: false };
+    }
+
+    // Composite 0-100 score combining trend, relative strength vs. the
+    // benchmark, volume expansion, proximity to the EMA (chasing penalty),
+    // and RSI positioning. A starting heuristic meant to rank candidates,
+    // not a guarantee — tune the weights as you validate against outcomes.
+    function calculateSetupScore(o) {
+      var trendPts = o.stBullish ? 25 : 0;
+
+      var rsClamped = Math.max(-8, Math.min(8, o.rsExcess));
+      var rsPts = ((rsClamped + 8) / 16) * 25;
+
+      var volClamped = Math.max(0.6, Math.min(1.8, o.volRatio));
+      var volPts = ((volClamped - 0.6) / 1.2) * 20;
+
+      var absDist = Math.abs(o.emaDistPct);
+      var proxPts = absDist >= 6 ? 0 : (1 - absDist / 6) * 15;
+
+      var rsiPts = 10;
+      if (o.rsi > 75) rsiPts = 3; // already stretched — chasing risk
+      else if (o.rsi >= 40 && o.rsi <= 65) rsiPts = 10;
+      else rsiPts = 6;
+      if (o.bullDiv) rsiPts += 10;
+
+      var pullbackPts = o.isPullback ? 5 : 0;
+
+      var total = trendPts + rsPts + volPts + proxPts + rsiPts + pullbackPts;
+      return Math.max(0, Math.min(100, Math.round(total)));
+    }
+
+    function calculateLinRegTrigger(bars, targetLen, emaLen, maLen) {
+      var len = bars.length;
+      var closes = bars.map(function(b) { return b.c; });
+      var linReg = new Array(len).fill(null);
+
+      for (var idx = 0; idx < len; idx++) {
+        var curLen = Math.min(idx + 1, targetLen || 80);
+        if (curLen < 2) { linReg[idx] = closes[idx]; continue; }
+        var sumX = curLen * (curLen - 1) / 2;
+        var sumX2 = (curLen - 1) * curLen * (2 * curLen - 1) / 6;
+        var denom = curLen * sumX2 - sumX * sumX;
+        var sumY = 0, sumXY = 0;
+        for (var i = 0; i < curLen; i++) {
+          var y = closes[idx - (curLen - 1 - i)];
+          sumY += y; sumXY += i * y;
+        }
+        var slope = (curLen * sumXY - sumX * sumY) / (denom || 1e-9);
+        var intercept = (sumY - slope * sumX) / curLen;
+        linReg[idx] = intercept + slope * (curLen - 1);
+      }
+
+      var emaLR = calculateEMAProgressive(linReg, emaLen || 20);
+      var hma = calculateHMAProgressive(closes, maLen || 70);
+      var testVal = new Array(len).fill(null);
+      var colors = new Array(len).fill("#8b949e");
+
+      for (var n = 0; n < len; n++) {
+        testVal[n] = (linReg[n] + emaLR[n]) / 2;
+        var higher = emaLR[n] < linReg[n];
+        var lower = emaLR[n] > linReg[n];
+
+        if (higher && hma[n] > testVal[n]) {
+          colors[n] = "#00e5ff"; // Cyan
+        } else if (lower) {
+          colors[n] = "#ff9100"; // Amber
+        } else {
+          colors[n] = "#8b949e";
+        }
+      }
+      return { testVal: testVal, colors: colors };
+    }
+
+    function detectDoubleBottom(bars, rsi, lookback) {
+      lookback = lookback || 40;
+      var len = bars.length;
+      var start = Math.max(0, len - lookback);
+      var troughs = [];
+
+      for (var i = start + 1; i < len - 1; i++) {
+        if (bars[i].l <= bars[i - 1].l && bars[i].l <= bars[i + 1].l) {
+          troughs.push({ index: i, price: bars[i].l, rsi: rsi[i], time: bars[i].t });
+        }
+      }
+
+      if (troughs.length >= 2) {
+        var t1 = troughs[troughs.length - 2];
+        var t2 = troughs[troughs.length - 1];
+
+        if (t2.index - t1.index >= 4) {
+          var priceDiff = Math.abs(t1.price - t2.price) / t1.price;
+          if (priceDiff <= 0.035) {
+            var peak = -Infinity;
+            for (var k = t1.index; k <= t2.index; k++) {
+              if (bars[k].h > peak) peak = bars[k].h;
+            }
+            if (bars[len - 1].c >= peak * 0.97) {
+              return { confirmed: true, t1: t1, t2: t2 };
+            }
+          }
+        }
+      }
+      return { confirmed: false };
+    }
+
+    function detectRSIDivergence(bars, rsi, lookback) {
+      lookback = lookback || 35;
+      var len = bars.length;
+      var start = Math.max(0, len - lookback);
+      var bullDiv = false, bearDiv = false;
+      var bullPts = null, bearPts = null;
+
+      var lowP = [], highP = [];
+      for (var i = start + 1; i < len - 1; i++) {
+        if (rsi[i] === null) continue;
+        if (bars[i].l <= bars[i-1].l && bars[i].l <= bars[i+1].l) {
+          lowP.push({ idx: i, price: bars[i].l, rsi: rsi[i], time: bars[i].t });
+        }
+        if (bars[i].h >= bars[i-1].h && bars[i].h >= bars[i+1].h) {
+          highP.push({ idx: i, price: bars[i].h, rsi: rsi[i], time: bars[i].t });
+        }
+      }
+
+      // Bullish (buy-side) divergence: price makes a lower low while RSI makes
+      // a higher low, with the first swing low in/near oversold territory.
+      if (lowP.length >= 2) {
+        var l1 = lowP[lowP.length - 2];
+        var l2 = lowP[lowP.length - 1];
+        if (l2.price < l1.price && l2.rsi > l1.rsi && l1.rsi < 40) {
+          bullDiv = true;
+          bullPts = { p1: l1, p2: l2 };
+        }
+      }
+
+      // Bearish (sell-side) divergence: price makes a higher high while RSI
+      // makes a lower high, with the first swing high in/near overbought territory.
+      if (highP.length >= 2) {
+        var h1 = highP[highP.length - 2];
+        var h2 = highP[highP.length - 1];
+        if (h2.price > h1.price && h2.rsi < h1.rsi && h1.rsi > 60) {
+          bearDiv = true;
+          bearPts = { p1: h1, p2: h2 };
+        }
+      }
+
+      return { bullDiv: bullDiv, bearDiv: bearDiv, bullPts: bullPts, bearPts: bearPts };
+    }
+
+    function renderScreenerTable() {
+      var tbody = document.getElementById("screenerBody");
+      var mode = document.getElementById("colMode").value;
+      var dynHeader = document.getElementById("dynHeader");
+      tbody.innerHTML = "";
+
+      dynHeader.innerText = (mode === "price") ? "Price" : "Dist EMA34";
+
+      var displayList = screenerData.slice();
+      if (mode === "near_ema") {
+        displayList = displayList.filter(function(item) {
+          return Math.abs(item.ema34Dist) <= 2.0;
+        });
+      }
+
+      displayList.sort(function(a, b) {
+        var valA = a[currentSortKey];
+        var valB = b[currentSortKey];
+        if (currentSortKey === "displayVal") {
+          valA = (mode === "price") ? a.price : a.ema34Dist;
+          valB = (mode === "price") ? b.price : b.ema34Dist;
+        }
+        if (valA < valB) return currentSortAsc ? -1 : 1;
+        if (valA > valB) return currentSortAsc ? 1 : -1;
+        return 0;
+      });
+
+      renderedTickers = displayList.map(function(i) { return i.sym; });
+
+      if (displayList.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color: var(--text-muted);">No symbols match criteria.</td></tr>';
+        return;
+      }
+
+      displayList.forEach(function(row, idx) {
+        var tr = document.createElement("tr");
+        tr.className = "ticker-row";
+        tr.id = "row-" + row.sym;
+        if (row.sym === activeTicker) tr.classList.add("selected");
+
+        var valCell = (mode === "price")
+          ? '$' + row.price.toFixed(2)
+          : (row.ema34Dist > 0 ? '+' : '') + row.ema34Dist.toFixed(2) + '%';
+
+        var distHighlight = Math.abs(row.ema34Dist) <= 2.0 ? 'color: var(--cyan); font-weight:bold;' : '';
+        var trendColor = row.stBullish ? "var(--green)" : "var(--red)";
+        var badges = [];
+
+        if (row.isDoubleBottom) badges.push('<span class="badge badge-buy">W-Bottom</span>');
+        if (row.isPullback) badges.push('<span class="badge badge-pullback">Pullback</span>');
+        if (row.bullDiv) badges.push('<span class="badge badge-div">Bull Div</span>');
+        if (row.bearDiv) badges.push('<span class="badge badge-sell">Bear Div</span>');
+        if (badges.length === 0) badges.push('<span style="color:var(--text-muted);">-</span>');
+
+        var scoreColor = row.score >= 65 ? "var(--green)" : (row.score >= 40 ? "var(--orange)" : "var(--text-muted)");
+
+        tr.innerHTML = '<td style="font-weight:bold;">' + row.sym + '</td>' +
+                       '<td style="' + distHighlight + '">' + valCell + '</td>' +
+                       '<td>' + row.rsi + '</td>' +
+                       '<td style="color:' + trendColor + '; font-weight:bold;">' + (row.stBullish ? "↑ Bull" : "↓ Bear") + '</td>' +
+                       '<td style="color:' + scoreColor + '; font-weight:bold;">' + row.score + '</td>' +
+                       '<td>' + badges.join(" ") + '</td>';
+
+        tr.onclick = function() { selectTicker(row.sym); };
+        tbody.appendChild(tr);
+
+        if (!activeTicker && idx === 0) selectTicker(row.sym);
+      });
+    }
+
+    function selectTicker(sym) {
+      if (!sym) return;
+      activeTicker = sym;
+      document.getElementById("chartSymbol").innerText = sym;
+
+      document.querySelectorAll(".ticker-row").forEach(function(r) { r.classList.remove("selected"); });
+      var row = document.getElementById("row-" + sym);
+      if (row) {
+        row.classList.add("selected");
+        row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
+
+      loadChartData(sym);
+    }
+
+    function navigateTicker(delta) {
+      if (renderedTickers.length === 0) return;
+      var currentIndex = renderedTickers.indexOf(activeTicker);
+      if (currentIndex === -1) {
+        selectTicker(renderedTickers[0]);
+        return;
+      }
+      var nextIndex = (currentIndex + delta + renderedTickers.length) % renderedTickers.length;
+      selectTicker(renderedTickers[nextIndex]);
+    }
+
+    function initKeyboardNavigation() {
+      window.addEventListener("keydown", function(e) {
+        var tag = e.target.tagName.toLowerCase();
+        if (tag === "input" || tag === "textarea" || tag === "select") return;
+
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          e.preventDefault();
+          navigateTicker(e.key === "ArrowDown" ? 1 : -1);
+        }
+      });
+    }
+
+    function initSidebarToggle() {
+      var sidebar = document.querySelector(".screener-sidebar");
+      var btn = document.getElementById("sidebarToggleBtn");
+      // The transition target (width on desktop, max-height on mobile) only
+      // settles at transitionend, so that's when it's safe to resize charts.
+      sidebar.addEventListener("transitionend", resizeAllCharts);
+      btn.addEventListener("click", function() {
+        var collapsed = sidebar.classList.toggle("collapsed");
+        btn.textContent = collapsed ? "☰ Show List" : "☰";
+        btn.title = collapsed ? "Show watchlist" : "Hide watchlist";
+      });
+    }
+
+    function applyLayoutMode(mode) {
+      var pDaily = document.getElementById("paneDaily");
+      var pHourly = document.getElementById("paneHourly");
+      var layoutSelect = document.getElementById("splitLayoutSelect");
+
+      if (mode === "split") {
+        pDaily.style.display = "flex";
+        pHourly.style.display = "flex";
+      } else if (mode === "1d") {
+        pDaily.style.display = "flex";
+        pHourly.style.display = "none";
+      } else if (mode === "1h") {
+        pDaily.style.display = "none";
+        pHourly.style.display = "flex";
+      }
+      if (layoutSelect) layoutSelect.value = mode;
+      resizeAllCharts();
+      setupAllDrawingCanvases();
+    }
+
+    function initSplitLayoutControls() {
+      var layoutSelect = document.getElementById("splitLayoutSelect");
+      layoutSelect.addEventListener("change", function(e) {
+        applyLayoutMode(e.target.value);
+      });
+    }
+
+    function initTableSortEvents() {
+      document.querySelectorAll("#tableHeader th").forEach(function(th) {
+        th.addEventListener("click", function() {
+          var key = th.getAttribute("data-key");
+          if (!key) return;
+          if (currentSortKey === key) currentSortAsc = !currentSortAsc;
+          else { currentSortKey = key; currentSortAsc = (key === "sym"); }
+
+          document.querySelectorAll("#tableHeader th").forEach(function(el) {
+            el.classList.remove("sorted-asc", "sorted-desc");
+          });
+          th.classList.add(currentSortAsc ? "sorted-asc" : "sorted-desc");
+          renderScreenerTable();
+        });
+      });
+
+      document.getElementById("colMode").addEventListener("change", renderScreenerTable);
+    }
+
+    async function fetchBars(sym, timeframe, start, end) {
+      var key = document.getElementById("apiKey").value.trim();
+      var secret = document.getElementById("apiSecret").value.trim();
+      var headers = { "APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret };
+      var baseUrl = 'https://data.alpaca.markets/v2/stocks/' + sym + '/bars?timeframe=' + timeframe + '&start=' + start.toISOString() + '&end=' + end.toISOString() + '&limit=1000&adjustment=split&feed=iex';
+
+      // Alpaca returns bars oldest-first and can cap a single response well
+      // below the requested `limit`, handing back the rest via
+      // `next_page_token`. For short ranges (e.g. 250 daily bars) that cap
+      // is never hit, but a 60-day window of 1Hour bars can be, and since
+      // bars are ascending, a truncated single page silently drops the
+      // *most recent* candles rather than the oldest — which is exactly
+      // what produced the stale-looking hourly chart. Follow the token
+      // until Alpaca stops returning one so we always get the full range.
+      var allBars = [];
+      var pageToken = null;
+      var pageCount = 0;
+      var MAX_PAGES = 20; // safety cap against an unexpected infinite loop
+      do {
+        var url = baseUrl + (pageToken ? '&page_token=' + encodeURIComponent(pageToken) : '');
+        var res = await fetch(url, { headers: headers });
+        if (!res.ok) {
+          // If we already collected some pages, return what we have rather
+          // than discarding good data over a failure on a later page.
+          return allBars.length ? allBars : null;
+        }
+        var json = await res.json();
+        if (json.bars && json.bars.length) {
+          allBars = allBars.concat(json.bars);
+        }
+        pageToken = json.next_page_token || null;
+        pageCount++;
+      } while (pageToken && pageCount < MAX_PAGES);
+
+      return allBars.length ? allBars : null;
+    }
+
+    async function scanWatchlist() {
+      var key = document.getElementById("apiKey").value.trim();
+      var secret = document.getElementById("apiSecret").value.trim();
+      if (!key || !secret) {
+        alert("Enter Alpaca API Key and Secret.");
+        return;
+      }
+
+      var raw = document.getElementById("watchlist").value;
+      var symbols = raw.split(",").map(function(s) { return s.trim().toUpperCase(); }).filter(Boolean);
+      var tbody = document.getElementById("screenerBody");
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Scanning watchlist (calculating full history)...</td></tr>';
+
+      var end = new Date();
+      var start = new Date();
+      // Fetch 250 days so EMA34, SuperTrend, and LinReg have historical stability
+      start.setDate(end.getDate() - 250);
+
+      screenerData = [];
+      activeTicker = null;
+
+      // Relative-strength benchmark: how much has SPY moved over the same
+      // lookback window, so each symbol's return can be compared as excess
+      // return rather than in isolation.
+      var RS_LOOKBACK = 10;
+      var benchmarkReturn = 0;
+      try {
+        var benchBars = await fetchBars("SPY", "1Day", start, end);
+        if (benchBars && benchBars.length > RS_LOOKBACK) {
+          benchmarkReturn = calculatePctReturn(benchBars, RS_LOOKBACK);
+        }
+      } catch (e) {
+        console.error("Benchmark (SPY) fetch failed — RS score will fall back to raw returns", e);
+      }
+
+      for (var i = 0; i < symbols.length; i++) {
+        var sym = symbols[i];
+        try {
+          var bars = await fetchBars(sym, "1Day", start, end);
+          if (!bars || bars.length < 35) continue;
+
+          var closes = bars.map(function(b) { return b.c; });
+          var rsi = calculateRSI(bars, 14);
+          var rsiEma = calculateEMAProgressive(rsi, 34);
+          var priceEma = calculateEMAProgressive(closes, 34);
+          var st = calculateSuperTrend(bars, 10, 3.0);
+          var trigger = calculateLinRegTrigger(bars, 80, 20, 70);
+          var atr = calculateATRProgressive(bars, 14);
+
+          var lastIdx = bars.length - 1;
+          var curPrice = bars[lastIdx].c;
+          var curEma34 = priceEma[lastIdx];
+          var emaDistPct = ((curPrice - curEma34) / curEma34) * 100;
+
+          var dbRes = detectDoubleBottom(bars, rsi, 40);
+          var divRes = detectRSIDivergence(bars, rsi, 35);
+          var pbRes = detectPullbackToEMA(bars, priceEma, st.direction, 6);
+
+          var stockReturn = calculatePctReturn(bars, RS_LOOKBACK);
+          var rsExcess = stockReturn - benchmarkReturn;
+
+          var volWindow = Math.min(20, lastIdx);
+          var volSum = 0, volCount = 0;
+          for (var vi = Math.max(0, lastIdx - volWindow); vi < lastIdx; vi++) {
+            if (typeof bars[vi].v === "number") { volSum += bars[vi].v; volCount++; }
+          }
+          var avgVol = volCount > 0 ? (volSum / volCount) : (bars[lastIdx].v || 1);
+          var volRatio = avgVol > 0 ? (bars[lastIdx].v / avgVol) : 1;
+
+          var lastRsi = rsi[lastIdx] !== null ? rsi[lastIdx] : 50;
+          var score = calculateSetupScore({
+            stBullish: st.direction[lastIdx] === 1,
+            rsExcess: rsExcess,
+            volRatio: volRatio,
+            emaDistPct: emaDistPct,
+            rsi: lastRsi,
+            bullDiv: divRes.bullDiv,
+            isPullback: pbRes.isPullback
+          });
+
+          // Suggested plan for a short 2-5 day hold: ATR-sized stop/target
+          // instead of an open-ended trail, so the trade has a defined exit
+          // within the window you're actually trying to trade.
+          var atrLast = atr[lastIdx] || (curPrice * 0.02);
+          var stopPrice = curPrice - 1.2 * atrLast;
+          var targetPrice = curPrice + 2.0 * atrLast;
+
+          cacheDaily[sym] = {
+            bars: bars,
+            rsi: rsi,
+            rsiEma: rsiEma,
+            priceEma: priceEma,
+            st: st.st,
+            direction: st.direction,
+            triggerVal: trigger.testVal,
+            triggerColors: trigger.colors,
+            dbRes: dbRes,
+            divRes: divRes,
+            atr: atr,
+            score: score,
+            stopPrice: stopPrice,
+            targetPrice: targetPrice
+          };
+
+          screenerData.push({
+            sym: sym,
+            price: curPrice,
+            ema34Dist: emaDistPct,
+            displayVal: curPrice,
+            rsi: rsi[lastIdx] ? rsi[lastIdx].toFixed(1) : "-",
+            stBullish: st.direction[lastIdx] === 1,
+            isDoubleBottom: dbRes.confirmed,
+            bullDiv: divRes.bullDiv,
+            bearDiv: divRes.bearDiv,
+            isPullback: pbRes.isPullback,
+            rsExcess: rsExcess,
+            volRatio: volRatio,
+            score: score,
+            stopPrice: stopPrice,
+            targetPrice: targetPrice,
+            patterns: (dbRes.confirmed ? 1 : 0) + (divRes.bullDiv ? 1 : 0) + (divRes.bearDiv ? 1 : 0) + (pbRes.isPullback ? 1 : 0)
+          });
+        } catch (err) {
+          console.error("Scan error: " + sym, err);
+        }
+      }
+
+      // Surface the best 2-5 day candidates first.
+      currentSortKey = "score";
+      currentSortAsc = false;
+      document.querySelectorAll("#tableHeader th").forEach(function(el) {
+        el.classList.remove("sorted-asc", "sorted-desc");
+      });
+      var scoreTh = document.querySelector('#tableHeader th[data-key="score"]');
+      if (scoreTh) scoreTh.classList.add("sorted-desc");
+
+      renderScreenerTable();
+    }
+
+    // Hourly data is cached per-session, but caching it forever means a
+    // ticker you opened weeks ago silently keeps showing that old snapshot.
+    // Re-fetch once the cache is older than this.
+    var HOURLY_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+    async function loadChartData(sym) {
+      if (cacheDaily[sym]) {
+        populateChart("daily", cacheDaily[sym], false);
+        var lastDailyBar = cacheDaily[sym].bars.length ? cacheDaily[sym].bars[cacheDaily[sym].bars.length - 1].t : null;
+        document.getElementById("statusDaily").innerText = "Ready" + describeAsOf(lastDailyBar);
+      }
+
+      var stH = document.getElementById("statusHourly");
+      stH.innerText = "Loading...";
+
+      var cachedHourly = cacheHourly[sym];
+      var isFresh = cachedHourly && (Date.now() - cachedHourly.fetchedAt) < HOURLY_CACHE_TTL_MS;
+      if (isFresh) {
+        populateChart("hourly", cachedHourly, true);
+        stH.innerText = "Ready";
+        return;
+      }
+
+      var end = new Date();
+      var start = new Date();
+      // Fetch 60 days of 1-Hour candles for indicator warm up
+      start.setDate(end.getDate() - 60);
+
+      try {
+        var hBars = await fetchBars(sym, "1Hour", start, end);
+
+        // Diagnostic: log exactly what was requested vs. what actually came
+        // back, so a stale chart can be told apart from a real app bug —
+        // if the API itself only returns bars through some past date, that's
+        // an account/data-feed limitation, not something this code caches.
+        var lastBarTime = hBars && hBars.length ? hBars[hBars.length - 1].t : null;
+        console.log(
+          "[" + sym + " 1Hour] requested " + start.toISOString() + " -> " + end.toISOString() +
+          " | got " + (hBars ? hBars.length : 0) + " bars" +
+          (lastBarTime ? " | last bar: " + lastBarTime : "")
+        );
+        if (lastBarTime) {
+          var gapDays = (Date.now() - new Date(lastBarTime).getTime()) / (24 * 60 * 60 * 1000);
+          if (gapDays > 3) {
+            console.warn(
+              "[" + sym + "] Alpaca returned no 1Hour bars newer than " + lastBarTime +
+              " (" + gapDays.toFixed(1) + " days old) even though today was requested. " +
+              "This is the API response itself, not a local cache — check the account's " +
+              "market data subscription/feed entitlement (feed=iex) or plan status."
+            );
+          }
+        }
+
+        if (hBars && hBars.length >= 20) {
+          var closes = hBars.map(function(b) { return b.c; });
+          var rsi = calculateRSI(hBars, 14);
+          var rsiEma = calculateEMAProgressive(rsi, 34);
+          var priceEma = calculateEMAProgressive(closes, 34);
+          var st = calculateSuperTrend(hBars, 10, 3.0);
+          var trigger = calculateLinRegTrigger(hBars, 80, 20, 70);
+          var dbRes = detectDoubleBottom(hBars, rsi, 40);
+          var divRes = detectRSIDivergence(hBars, rsi, 35);
+
+          cacheHourly[sym] = {
+            bars: hBars,
+            rsi: rsi,
+            rsiEma: rsiEma,
+            priceEma: priceEma,
+            st: st.st,
+            direction: st.direction,
+            triggerVal: trigger.testVal,
+            triggerColors: trigger.colors,
+            dbRes: dbRes,
+            divRes: divRes,
+            fetchedAt: Date.now()
+          };
+          populateChart("hourly", cacheHourly[sym], true);
+          stH.innerText = "Ready" + describeAsOf(lastBarTime);
+        } else if (cachedHourly) {
+          // Refetch failed to return usable data — fall back to the stale
+          // cache rather than showing nothing, but flag it as stale.
+          populateChart("hourly", cachedHourly, true);
+          stH.innerText = "Stale (refresh failed)";
+        } else {
+          stH.innerText = "No 1H Data";
+        }
+      } catch (e) {
+        console.error("Failed hourly fetch for " + sym, e);
+        if (cachedHourly) {
+          populateChart("hourly", cachedHourly, true);
+          stH.innerText = "Stale (refresh failed)";
+        } else {
+          stH.innerText = "Error";
+        }
+      }
+    }
+
+    // Appends " (as of <date>)" to a status label whenever the freshest bar
+    // available is more than a day old, so a stale API response is visible
+    // in the UI immediately instead of only showing up as an empty-looking
+    // gap on the right side of the chart.
+    function describeAsOf(lastBarTime) {
+      if (!lastBarTime) return "";
+      var ms = new Date(lastBarTime).getTime();
+      var gapDays = (Date.now() - ms) / (24 * 60 * 60 * 1000);
+      if (gapDays < 1) return "";
+      return " (as of " + new Date(ms).toLocaleDateString() + ")";
+    }
+
+    function updateTradePlanBar(d) {
+      var el = document.getElementById("tradePlanBar");
+      if (!el) return;
+      if (!d || !d.bars || !d.bars.length || typeof d.stopPrice !== "number" || typeof d.targetPrice !== "number") {
+        el.innerHTML = '<span style="color:var(--text-muted);">No trade plan available — scan the watchlist to compute one.</span>';
+        return;
+      }
+      var entry = d.bars[d.bars.length - 1].c;
+      var risk = entry - d.stopPrice;
+      var reward = d.targetPrice - entry;
+      var rr = risk > 0 ? (reward / risk) : 0;
+      var scoreColor = d.score >= 65 ? "var(--green)" : (d.score >= 40 ? "var(--orange)" : "var(--text-muted)");
+
+      el.innerHTML =
+        '<span style="color:var(--text-muted);">2-5D Plan:</span>' +
+        '<span>Entry <b>$' + entry.toFixed(2) + '</b></span>' +
+        '<span style="color:var(--red);">Stop <b>$' + d.stopPrice.toFixed(2) + '</b></span>' +
+        '<span style="color:var(--green);">Target <b>$' + d.targetPrice.toFixed(2) + '</b></span>' +
+        '<span style="color:var(--cyan);">R:R <b>' + rr.toFixed(2) + '</b></span>' +
+        (typeof d.score === "number" ? '<span style="color:' + scoreColor + ';">Score <b>' + d.score + '/100</b></span>' : '');
+    }
+
+    function populateChart(timeframe, d, isIntraday) {
+      var cObj = charts[timeframe];
+      if (!cObj.priceChart) return;
+
+      var candleData = [], stData = [], trigData = [], emaData = [], rsiData = [], rsiEmaData = [];
+      var obData = [], osData = [];
+      var markers = [];
+      var rsiMarkers = [];
+
+      // Filter to display only the last 30 calendar days of plotted points
+      var cutoffTimestamp = Date.now() - (90 * 24 * 60 * 60 * 1000);
+
+      function toTimeVal(isoOrMs) {
+        var ms = typeof isoOrMs === "string" ? new Date(isoOrMs).getTime() : isoOrMs;
+        return isIntraday ? Math.floor(ms / 1000) : new Date(ms).toISOString().split("T")[0];
+      }
+
+      for (var i = 0; i < d.bars.length; i++) {
+        var b = d.bars[i];
+        var barMs = new Date(b.t).getTime();
+        if (barMs < cutoffTimestamp) continue;
+
+        var timeVal = isIntraday ? Math.floor(barMs / 1000) : b.t.split("T")[0];
+        var isBull = d.direction[i] === 1;
+        var isClosedDown = b.c < b.o;
+
+        var trendColor = isBull ? "#26a69a" : "#ef5350";
+        var fill = isBull ? (isClosedDown ? "#12141a" : "#26a69a") : (isClosedDown ? "#ef5350" : "#12141a");
+
+        candleData.push({
+          time: timeVal,
+          open: b.o,
+          high: b.h,
+          low: b.l,
+          close: b.c,
+          color: fill,
+          borderColor: trendColor,
+          wickColor: trendColor
+        });
+
+        if (d.st[i] !== null) stData.push({ time: timeVal, value: d.st[i], color: trendColor });
+        if (d.triggerVal[i] !== null) trigData.push({ time: timeVal, value: d.triggerVal[i], color: d.triggerColors[i] });
+        if (d.priceEma[i] !== null) emaData.push({ time: timeVal, value: d.priceEma[i] });
+        if (d.rsi[i] !== null) {
+          rsiData.push({ time: timeVal, value: d.rsi[i] });
+          // Flat bands: top series pinned to 100 (fills down to the 70 baseline),
+          // bottom series pinned to 0 (fills up to the 30 baseline).
+          obData.push({ time: timeVal, value: 100 });
+          osData.push({ time: timeVal, value: 0 });
+        }
+        if (d.rsiEma[i] !== null) rsiEmaData.push({ time: timeVal, value: d.rsiEma[i] });
+      }
+
+      if (d.dbRes && d.dbRes.confirmed) {
+        var dbMs = new Date(d.dbRes.t2.time).getTime();
+        if (dbMs >= cutoffTimestamp) {
+          var mTime = toTimeVal(dbMs);
+          markers.push({ time: mTime, position: "belowBar", color: "#00e5ff", shape: "arrowUp", text: "W-Bottom" });
+        }
+      }
+
+      // Bullish divergence: draw a connector line between the two swing lows
+      // on both the price pane and the RSI pane, plus markers at the pivots.
+      var bullPriceLine = [], bullRsiLine = [];
+      if (d.divRes && d.divRes.bullDiv && d.divRes.bullPts) {
+        var bp1 = d.divRes.bullPts.p1, bp2 = d.divRes.bullPts.p2;
+        var bp1Ms = new Date(bp1.time).getTime(), bp2Ms = new Date(bp2.time).getTime();
+        if (bp1Ms >= cutoffTimestamp) {
+          bullPriceLine.push({ time: toTimeVal(bp1Ms), value: bp1.price });
+          bullRsiLine.push({ time: toTimeVal(bp1Ms), value: bp1.rsi });
+        }
+        bullPriceLine.push({ time: toTimeVal(bp2Ms), value: bp2.price });
+        bullRsiLine.push({ time: toTimeVal(bp2Ms), value: bp2.rsi });
+
+        var bullMTime = toTimeVal(bp2Ms);
+        markers.push({ time: bullMTime, position: "belowBar", color: "#d500f9", shape: "circle", text: "Bull Div" });
+        rsiMarkers.push({ time: bullMTime, position: "belowBar", color: "#d500f9", shape: "circle", text: "Bull Div" });
+      }
+
+      // Bearish divergence: connector line between the two swing highs.
+      var bearPriceLine = [], bearRsiLine = [];
+      if (d.divRes && d.divRes.bearDiv && d.divRes.bearPts) {
+        var hp1 = d.divRes.bearPts.p1, hp2 = d.divRes.bearPts.p2;
+        var hp1Ms = new Date(hp1.time).getTime(), hp2Ms = new Date(hp2.time).getTime();
+        if (hp1Ms >= cutoffTimestamp) {
+          bearPriceLine.push({ time: toTimeVal(hp1Ms), value: hp1.price });
+          bearRsiLine.push({ time: toTimeVal(hp1Ms), value: hp1.rsi });
+        }
+        bearPriceLine.push({ time: toTimeVal(hp2Ms), value: hp2.price });
+        bearRsiLine.push({ time: toTimeVal(hp2Ms), value: hp2.rsi });
+
+        var bearMTime = toTimeVal(hp2Ms);
+        markers.push({ time: bearMTime, position: "aboveBar", color: "#e91e63", shape: "circle", text: "Bear Div" });
+        rsiMarkers.push({ time: bearMTime, position: "aboveBar", color: "#e91e63", shape: "circle", text: "Bear Div" });
+      }
+
+      cObj.candleSeries.setData(candleData);
+      setMarkersCompat(cObj.candleSeries, markers);
+      cObj.stSeries.setData(stData);
+      cObj.trigSeries.setData(trigData);
+      cObj.emaSeries.setData(emaData);
+
+      cObj.obSeries.setData(obData);
+      cObj.osSeries.setData(osData);
+      cObj.rsiSeries.setData(rsiData);
+      cObj.rsiEmaSeries.setData(rsiEmaData);
+      setMarkersCompat(cObj.rsiSeries, rsiMarkers);
+
+      // bullPriceLine/bearPriceLine need at least 2 points to draw a segment;
+      // a single point (pivot 1 outside the visible window) still renders fine
+      // as an implicit ray from pivot 2, so only clear when truly empty.
+      cObj.bullDivPriceSeries.setData(bullPriceLine.length >= 2 ? bullPriceLine : []);
+      cObj.bearDivPriceSeries.setData(bearPriceLine.length >= 2 ? bearPriceLine : []);
+      cObj.bullDivRsiSeries.setData(bullRsiLine.length >= 2 ? bullRsiLine : []);
+      cObj.bearDivRsiSeries.setData(bearRsiLine.length >= 2 ? bearRsiLine : []);
+
+      if (timeframe === "daily") {
+        updateTradePlanBar(d);
+      }
+
+      // Keep right margin space for price visibility
+      cObj.priceChart.timeScale().fitContent();
+      cObj.rsiChart.timeScale().fitContent();
+
+      var rightPaddingBars = timeframe === "daily" ? 12 : 25;
+      cObj.priceChart.timeScale().scrollToPosition(rightPaddingBars, false);
+      cObj.rsiChart.timeScale().scrollToPosition(rightPaddingBars, false);
+
+      // Dragging a price axis by hand locks it out of auto-scale mode in
+      // Lightweight Charts. Force it back on for every new symbol so the
+      // axis always refits the incoming data instead of keeping whatever
+      // fixed range was left over from the previously viewed ticker.
+      cObj.priceChart.priceScale("right").applyOptions({ autoScale: true });
+      cObj.rsiChart.priceScale("right").applyOptions({ autoScale: true });
+
+      redrawCanvas(timeframe);
+    }
+
+    // Zooms a chart's time scale in or out around the center of whatever
+    // range is currently visible. factor < 1 zooms in (narrower window),
+    // factor > 1 zooms out (wider window). The paired price/RSI panes for
+    // a timeframe are already kept in sync via subscribeVisibleLogicalRangeChange
+    // (see initChartPane), so zooming just the price chart is enough.
+    function zoomTimeScale(chart, factor) {
+      if (!chart) return;
+      var ts = chart.timeScale();
+      var range = ts.getVisibleLogicalRange();
+      if (!range) return;
+      var center = (range.from + range.to) / 2;
+      var halfWidth = (range.to - range.from) / 2 * factor;
+      // Keep at least ~5 bars visible so zooming in can't collapse the range
+      // to nothing.
+      halfWidth = Math.max(halfWidth, 2.5);
+      ts.setVisibleLogicalRange({ from: center - halfWidth, to: center + halfWidth });
+    }
+
+    // Applies a zoom step to whichever timeframe pane(s) are currently
+    // shown per the Layout dropdown, so the buttons don't zoom a chart the
+    // user can't see.
+    function zoomVisiblePanes(factor) {
+      var layout = document.getElementById("splitLayoutSelect").value;
+      if (layout !== "1h") zoomTimeScale(charts.daily.priceChart, factor);
+      if (layout !== "1d") zoomTimeScale(charts.hourly.priceChart, factor);
+    }
+
+    function resetZoomVisiblePanes() {
+      var layout = document.getElementById("splitLayoutSelect").value;
+      ["daily", "hourly"].forEach(function(tf) {
+        if (layout === "1h" && tf === "daily") return;
+        if (layout === "1d" && tf === "hourly") return;
+        var cObj = charts[tf];
+        if (!cObj || !cObj.priceChart) return;
+        cObj.priceChart.timeScale().fitContent();
+        cObj.rsiChart.timeScale().fitContent();
+        var rightPaddingBars = tf === "daily" ? 12 : 25;
+        cObj.priceChart.timeScale().scrollToPosition(rightPaddingBars, false);
+        cObj.rsiChart.timeScale().scrollToPosition(rightPaddingBars, false);
+      });
+    }
+
+    function exportChartsView() {
+      var p1 = charts.daily.priceChart.takeScreenshot();
+      var r1 = charts.daily.rsiChart.takeScreenshot();
+      var isHourlyVisible = document.getElementById("paneHourly").style.display !== "none";
+      var isDailyVisible = document.getElementById("paneDaily").style.display !== "none";
+
+      var canvas = document.createElement("canvas");
+
+      if (isDailyVisible && isHourlyVisible) {
+        var p2 = charts.hourly.priceChart.takeScreenshot();
+        var r2 = charts.hourly.rsiChart.takeScreenshot();
+        canvas.width = p1.width + p2.width;
+        canvas.height = Math.max(p1.height + r1.height, p2.height + r2.height);
+        var ctx = canvas.getContext("2d");
+        ctx.drawImage(p1, 0, 0);
+        ctx.drawImage(r1, 0, p1.height);
+        ctx.drawImage(p2, p1.width, 0);
+        ctx.drawImage(r2, p1.width, p2.height);
+      } else if (isDailyVisible) {
+        canvas.width = p1.width;
+        canvas.height = p1.height + r1.height;
+        var ctx = canvas.getContext("2d");
+        ctx.drawImage(p1, 0, 0);
+        ctx.drawImage(r1, 0, p1.height);
+      } else {
+        var p2 = charts.hourly.priceChart.takeScreenshot();
+        var r2 = charts.hourly.rsiChart.takeScreenshot();
+        canvas.width = p2.width;
+        canvas.height = p2.height + r2.height;
+        var ctx = canvas.getContext("2d");
+        ctx.drawImage(p2, 0, 0);
+        ctx.drawImage(r2, 0, p2.height);
+      }
+
+      var link = document.createElement("a");
+      link.download = (activeTicker || "chart") + "_dual_view.png";
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    }
+
+    window.onload = function() {
+      checkFileOrigin();
+      loadSavedCredentials();
+      initCharts();
+      initTableSortEvents();
+      initKeyboardNavigation();
+      initSplitLayoutControls();
+      // On a phone-sized screen, showing both the 1D and 1H panes side by
+      // side squeezes each one too narrow to read — default to a single
+      // pane. The Layout dropdown still lets anyone switch back to Split.
+      // The watchlist sidebar is also collapsed by default so the chart
+      // — the main reason to open this on a phone — is visible right
+      // away instead of below a table; the ☰ button still reopens it.
+      if (window.innerWidth <= 860) {
+        applyLayoutMode("1d");
+        document.querySelector(".screener-sidebar").classList.add("collapsed");
+        var toggleBtn = document.getElementById("sidebarToggleBtn");
+        toggleBtn.textContent = "☰ Show List";
+        toggleBtn.title = "Show watchlist";
+      }
+      document.getElementById("scanBtn").addEventListener("click", scanWatchlist);
+      document.getElementById("exportImgBtn").addEventListener("click", exportChartsView);
+      document.getElementById("zoomInBtn").addEventListener("click", function() { zoomVisiblePanes(0.7); });
+      document.getElementById("zoomOutBtn").addEventListener("click", function() { zoomVisiblePanes(1 / 0.7); });
+      document.getElementById("zoomResetBtn").addEventListener("click", resetZoomVisiblePanes);
+      document.getElementById("prevTickerBtn").addEventListener("click", function() { navigateTicker(-1); });
+      document.getElementById("nextTickerBtn").addEventListener("click", function() { navigateTicker(1); });
+      initSidebarToggle();
+
+      // PWA: register the service worker so the app shell (this page,
+      // the manifest, icons) is available offline/on flaky mobile
+      // connections. Live Alpaca data still requires a real network
+      // request — only the static shell is cached. Requires https (or
+      // localhost); does nothing for a plain file:// open.
+      if ("serviceWorker" in navigator && window.location.protocol !== "file:") {
+        navigator.serviceWorker.register("service-worker.js").catch(function(err) {
+          console.warn("Service worker registration failed:", err);
+        });
+      }
+    };
+  </script>
+</body>
+</html>
