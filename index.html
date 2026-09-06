@@ -68,11 +68,13 @@
     button:hover { opacity: 0.9; }
     .btn-secondary { background: #21262d; border: 1px solid var(--border); }
     /* On wide screens the credentials fields stay inline in the header
-       exactly as before; the <details> wrapper only becomes a visible
-       collapsible panel at the mobile breakpoint below. */
+       exactly as before; the toggle button only becomes visible (and
+       the fields only become collapsible) at the mobile breakpoint
+       below — this rule alone, with no toggling logic, is what keeps
+       desktop layout unchanged. */
     .creds-panel { display: contents; }
-    .creds-panel summary { display: none; }
-    .creds-panel .creds-fields { display: contents; }
+    .creds-toggle-btn { display: none; }
+    .creds-fields { display: contents; }
     .main-container {
       display: flex;
       flex: 1;
@@ -238,29 +240,37 @@
         width: 100%;
       }
       /* API key fields are rarely re-entered once saved (they persist in
-         localStorage) so they're tucked behind a collapsible details
-         panel on phones to keep the header short and the chart close to
-         the top of the page. */
+         localStorage) so they're tucked behind a collapsible panel on
+         phones to keep the header short and the chart close to the top
+         of the page. Toggling is done via a plain button + JS class
+         (see credsToggleBtn below) rather than <details>, since
+         <details> default-hides its body and fighting that with CSS
+         display overrides was unreliable across browsers. */
       header .creds-panel {
         display: block;
         flex: 1 1 100%;
         width: 100%;
         order: 3;
       }
-      header .creds-panel summary {
-        display: list-item;
-        list-style: none;
-        cursor: pointer;
+      header .creds-toggle-btn {
+        display: block;
+        width: 100%;
+        text-align: left;
+        background: transparent;
+        border: none;
         color: var(--text-muted);
         font-size: 12px;
         padding: 4px 2px;
+        cursor: pointer;
       }
-      header .creds-panel summary::-webkit-details-marker { display: none; }
-      header .creds-panel .creds-fields {
-        display: flex;
+      header .creds-fields {
+        display: none;
         flex-direction: column;
         gap: 6px;
         margin-top: 6px;
+      }
+      header .creds-panel.expanded .creds-fields {
+        display: flex;
       }
       header #watchlist { order: 1; }
       header #scanBtn { order: 2; }
@@ -355,13 +365,13 @@
   </div>
 
   <header>
-    <details class="creds-panel">
-      <summary>⚙ API Keys</summary>
-      <div class="creds-fields">
+    <div class="creds-panel">
+      <button type="button" class="btn-secondary creds-toggle-btn" id="credsToggleBtn">⚙ API Keys</button>
+      <div class="creds-fields" id="credsFields">
         <input type="text" id="apiKey" placeholder="Alpaca Key ID" size="22" />
         <input type="password" id="apiSecret" placeholder="Alpaca Secret Key" size="24" />
       </div>
-    </details>
+    </div>
     <input type="text" id="watchlist" value="AAPL,MSFT,NVDA,TSLA,AMD,GOOGL,AMZN,META,SPY,QQQ" size="32" />
     <button id="scanBtn" type="button">Scan Watchlist</button>
   </header>
@@ -1274,6 +1284,15 @@
       });
     }
 
+    function initCredsToggle() {
+      var btn = document.getElementById("credsToggleBtn");
+      var panel = document.querySelector(".creds-panel");
+      if (!btn || !panel) return;
+      btn.addEventListener("click", function() {
+        panel.classList.toggle("expanded");
+      });
+    }
+
     function initSidebarToggle() {
       var sidebar = document.querySelector(".screener-sidebar");
       var btn = document.getElementById("sidebarToggleBtn");
@@ -1888,6 +1907,7 @@
       document.getElementById("prevTickerBtn").addEventListener("click", function() { navigateTicker(-1); });
       document.getElementById("nextTickerBtn").addEventListener("click", function() { navigateTicker(1); });
       initSidebarToggle();
+      initCredsToggle();
 
       // PWA: register the service worker so the app shell (this page,
       // the manifest, icons) is available offline/on flaky mobile
